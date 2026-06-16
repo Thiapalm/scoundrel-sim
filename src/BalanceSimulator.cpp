@@ -16,6 +16,178 @@
 #include "assets/room.h"
 #include "assets/cards.h"
 
+struct SimCard {
+    int original_index;
+    CardType type;
+    int value;
+};
+
+struct SimState {
+    int hp;
+    int max_hp;
+    bool has_weapon;
+    int weapon_damage;
+    int weapon_last_monster_damage;
+    int weapon_monsters_killed;
+    bool potion_used;
+    bool banished_this_room;
+    int actions_taken;
+    bool room_skipped;
+    std::string player_class_name;
+    std::vector<SimCard> room_cards;
+};
+
+struct SimMove {
+    std::string action_name;
+    int card_idx; // 1-based index (or -1)
+};
+
+inline void solve_dfs(const SimState& state, 
+                      std::vector<SimMove>& path, 
+                      std::vector<SimMove>& best_path, 
+                      int& best_score) {
+    if (state.hp <= 0) {
+        int score = -100000 + state.actions_taken;
+        if (score > best_score) {
+            best_score = score;
+            best_path = path;
+        }
+        return;
+    }
+
+    // Check if we can do New Room
+    if (state.actions_taken == 3 || state.room_cards.empty()) {
+        int score = state.hp * 100;
+        if (state.has_weapon) {
+            score += state.weapon_damage * 15;
+        }
+        if (state.actions_taken == 3) {
+            for (const auto& card : state.room_cards) {
+                if (card.type == CardType::Monster) {
+                    score -= card.value * 12;
+                } else if (card.type == CardType::Potion) {
+                    score += card.value * 4;
+                } else if (card.type == CardType::Weapon) {
+                    score += card.value * 6;
+                }
+            }
+        }
+        
+        path.push_back({"New Room", -1});
+        if (score > best_score) {
+            best_score = score;
+            best_path = path;
+        }
+        path.pop_back();
+    }
+
+    // Check if we can do Skip Room
+    if (state.actions_taken == 0 && !state.room_skipped) {
+        int score = state.hp * 100;
+        if (state.has_weapon) {
+            score += state.weapon_damage * 15;
+        }
+        
+        path.push_back({"Skip Room", -1});
+        if (score > best_score) {
+            best_score = score;
+            best_path = path;
+        }
+        path.pop_back();
+    }
+
+    if (state.room_cards.empty()) {
+        return;
+    }
+
+    for (size_t i = 0; i < state.room_cards.size(); ++i) {
+        const auto& card = state.room_cards[i];
+        
+        auto get_next_cards = [&](size_t remove_idx) {
+            std::vector<SimCard> next_cards = state.room_cards;
+            next_cards.erase(next_cards.begin() + remove_idx);
+            return next_cards;
+        };
+
+        if (card.type == CardType::Potion) {
+            SimState next_state = state;
+            next_state.room_cards = get_next_cards(i);
+            next_state.actions_taken++;
+            
+            bool can_heal = !state.potion_used || (state.player_class_name == "Wizard");
+            if (can_heal) {
+                next_state.hp = std::min(state.max_hp, state.hp + card.value);
+            }
+            next_state.potion_used = true;
+            
+            path.push_back({"Drink Potion", card.original_index + 1});
+            solve_dfs(next_state, path, best_path, best_score);
+            path.pop_back();
+        }
+        else if (card.type == CardType::Weapon) {
+            SimState next_state = state;
+            next_state.room_cards = get_next_cards(i);
+            next_state.actions_taken++;
+            
+            next_state.has_weapon = true;
+            next_state.weapon_damage = card.value;
+            next_state.weapon_last_monster_damage = 0;
+            next_state.weapon_monsters_killed = 0;
+            
+            path.push_back({"Attach Weapon", card.original_index + 1});
+            solve_dfs(next_state, path, best_path, best_score);
+            path.pop_back();
+        }
+        else if (card.type == CardType::Monster) {
+            if (state.player_class_name == "Wizard" && !state.banished_this_room) {
+                SimState next_state = state;
+                next_state.room_cards = get_next_cards(i);
+                next_state.actions_taken++;
+                next_state.banished_this_room = true;
+                
+                path.push_back({"Banish Monster", card.original_index + 1});
+                solve_dfs(next_state, path, best_path, best_score);
+                path.pop_back();
+            }
+
+            if (state.has_weapon) {
+                bool can_attack = (state.weapon_monsters_killed == 0) || 
+                                  (card.value < state.weapon_last_monster_damage);
+                if (can_attack) {
+                    SimState next_state = state;
+                    next_state.room_cards = get_next_cards(i);
+                    next_state.actions_taken++;
+                    
+                    int damage_taken = std::max(0, card.value - state.weapon_damage);
+                    next_state.hp = state.hp - damage_taken;
+                    next_state.weapon_last_monster_damage = card.value;
+                    next_state.weapon_monsters_killed++;
+                    
+                    path.push_back({"Attack Monster", card.original_index + 1});
+                    solve_dfs(next_state, path, best_path, best_score);
+                    path.pop_back();
+                }
+            }
+
+            // Hand Combat / Attack Monster No Weapon
+            {
+                SimState next_state = state;
+                next_state.room_cards = get_next_cards(i);
+                next_state.actions_taken++;
+                next_state.hp = state.hp - card.value;
+                
+                path.push_back({"Hand Combat", card.original_index + 1});
+                solve_dfs(next_state, path, best_path, best_score);
+                path.pop_back();
+
+                path.push_back({"Attack Monster No Weapon", card.original_index + 1});
+                solve_dfs(next_state, path, best_path, best_score);
+                path.pop_back();
+            }
+        }
+    }
+}
+
 class SimulationUI : public UserInterface {
 public:
     bool victory = false;
@@ -24,6 +196,12 @@ public:
     std::string defeat_reason;
     GameContext* m_ctx = nullptr;
     int m_last_action_idx = -1;
+    const Room* m_last_room = nullptr;
+    bool m_banished_this_room = false;
+    bool m_use_lookahead = false;
+    int m_next_card_idx = -1;
+
+    SimulationUI(bool use_lookahead = false) : m_use_lookahead(use_lookahead) {}
 
     std::optional<int> select_game_mode() override { return 1; } // Standard
     std::optional<int> select_player_class() override { return 0; } 
@@ -34,18 +212,101 @@ public:
     std::optional<int> request_action_index(int max_index) override {
         if (!m_ctx) return 0;
         auto actions = m_ctx->get_turn_valid_actions();
+        
+        if (m_use_lookahead) {
+            SimState state;
+            state.hp = m_ctx->get_player()->current_life();
+            state.max_hp = m_ctx->get_player()->get_max_health();
+            state.has_weapon = m_ctx->get_weapon() != nullptr;
+            state.weapon_damage = state.has_weapon ? m_ctx->get_weapon()->weapon_damage() : 0;
+            state.weapon_last_monster_damage = state.has_weapon ? m_ctx->get_weapon()->last_monster_damage() : 0;
+            state.weapon_monsters_killed = state.has_weapon ? m_ctx->get_weapon()->number_of_monsters() : 0;
+            state.potion_used = m_ctx->is_potion_used();
+            state.banished_this_room = m_banished_this_room;
+            state.actions_taken = m_ctx->get_actions_taken();
+            state.room_skipped = m_ctx->is_room_skipped();
+            state.player_class_name = m_ctx->get_player()->getName();
+            
+            auto* room = m_ctx->get_room();
+            if (room) {
+                for (int i = 0; i < room->cards_in_room(); ++i) {
+                    const auto& card = room->look_card(i);
+                    SimCard sc;
+                    sc.original_index = i;
+                    sc.type = card.getType();
+                    sc.value = static_cast<int>(card.get_face()) + 2;
+                    state.room_cards.push_back(sc);
+                }
+            }
+            
+            std::vector<SimMove> path;
+            std::vector<SimMove> best_path;
+            int best_score = -1000000;
+            
+            solve_dfs(state, path, best_path, best_score);
+            
+            if (!best_path.empty()) {
+                std::string chosen_action_name = best_path[0].action_name;
+                m_next_card_idx = best_path[0].card_idx;
+                
+                if (chosen_action_name == "Banish Monster") {
+                    m_banished_this_room = true;
+                }
+                
+                int idx = -1;
+                for (size_t i = 0; i < actions.size(); ++i) {
+                    if (actions[i]->name() == chosen_action_name) {
+                        idx = static_cast<int>(i);
+                        break;
+                    }
+                }
+                if (idx == -1) {
+                    if (chosen_action_name == "Hand Combat") {
+                        for (size_t i = 0; i < actions.size(); ++i) {
+                            if (actions[i]->name() == "Attack Monster No Weapon") {
+                                idx = static_cast<int>(i);
+                                break;
+                            }
+                        }
+                    } else if (chosen_action_name == "Attack Monster No Weapon") {
+                        for (size_t i = 0; i < actions.size(); ++i) {
+                            if (actions[i]->name() == "Hand Combat") {
+                                idx = static_cast<int>(i);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (idx != -1) {
+                    m_last_action_idx = idx;
+                    return m_last_action_idx;
+                }
+            }
+        }
+        
         m_last_action_idx = pick_action(*m_ctx, actions);
         return m_last_action_idx;
     }
 
     std::optional<int> request_card_index(int max_cards) override {
         if (!m_ctx) return 1;
+        if (m_use_lookahead && m_next_card_idx != -1) {
+            int card_idx = m_next_card_idx;
+            m_next_card_idx = -1;
+            return card_idx;
+        }
         return pick_card(*m_ctx, max_cards);
     }
 
     int pick_action(const GameContext& ctx, const std::vector<Action*>& actions) {
         auto* room = ctx.get_room();
         if (!room) return 0;
+
+        if (room != m_last_room) {
+            m_last_room = room;
+            m_banished_this_room = false;
+        }
 
         auto can_actually_execute = [&](Action* action) -> bool {
             if (action->name() == "Skip Room" || action->name() == "New Room") {
@@ -66,10 +327,65 @@ public:
 
         int idx;
         if ((idx = find_action("New Room")) != -1) return idx;
-        if (ctx.get_player()->current_life() < 12 && (idx = find_action("Drink Potion")) != -1) return idx;
+
+        // 1. Prioritize attaching a weapon if we don't have one
         if (!ctx.get_weapon() && (idx = find_action("Attach Weapon")) != -1) return idx;
+
+        // 2. Prioritize attacking a monster if we have a weapon
         if (ctx.get_weapon() && (idx = find_action("Attack Monster")) != -1) return idx;
+
+        // 3. Wizard Banish Monster logic:
+        if (!m_banished_this_room && (idx = find_action("Banish Monster")) != -1) {
+            bool should_banish = false;
+            // Banish if we don't have a weapon, or if there's a strong monster in the room
+            if (!ctx.get_weapon()) {
+                should_banish = true;
+            } else {
+                for (int i = 0; i < room->cards_in_room(); ++i) {
+                    const auto& card = room->look_card(i);
+                    if (card.getType() == CardType::Monster) {
+                        int val = static_cast<int>(card.get_face()) + 2;
+                        if (val >= 8) {
+                            should_banish = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (should_banish) return idx;
+        }
+
+        // 4. Drink potion if we are damaged and can/should heal
+        bool wants_potion = false;
+        int max_hp = ctx.get_player()->get_max_health();
+        int current_hp = ctx.get_player()->current_life();
+        if (current_hp < max_hp) {
+            bool is_wizard = (ctx.get_player()->getName() == "Wizard");
+            if (is_wizard) {
+                wants_potion = (current_hp <= max_hp - 3); // Wizard heals 3+ face value (minimum 2+2=4 HP)
+            } else {
+                wants_potion = !ctx.is_potion_used() && (current_hp <= max_hp - 4);
+            }
+        }
+        if (wants_potion && (idx = find_action("Drink Potion")) != -1) return idx;
+
+        // 5. Skip Room if valid and we think it's a good idea (e.g. room has monsters but no weapon)
+        if ((idx = find_action("Skip Room")) != -1) {
+            bool has_monster = false;
+            for (int i = 0; i < room->cards_in_room(); ++i) {
+                if (room->look_card(i).getType() == CardType::Monster) {
+                    has_monster = true;
+                    break;
+                }
+            }
+            if (has_monster && !ctx.get_weapon()) {
+                return idx;
+            }
+        }
+
+        // Fallbacks:
         if ((idx = find_action("Skip Room")) != -1) return idx;
+        if (!m_banished_this_room && (idx = find_action("Banish Monster")) != -1) return idx;
         if ((idx = find_action("Attack Monster No Weapon")) != -1) return idx;
         if ((idx = find_action("Hand Combat")) != -1) return idx;
         if ((idx = find_action("Attack Monster")) != -1) return idx;
@@ -95,11 +411,22 @@ public:
         if (!current_action) return 1;
 
         if (current_action->name() == "Drink Potion") {
+            int max_hp = ctx.get_player()->get_max_health();
+            int current_hp = ctx.get_player()->current_life();
+            int deficit = max_hp - current_hp;
+            int best_score = -1000;
+            
             for (int i = 0; i < room->cards_in_room(); ++i) {
                 if (current_action->can_execute(ctx, &room->look_card(i))) {
                     int val = static_cast<int>(room->look_card(i).get_face()) + 2;
-                    if (val > best_val) {
-                        best_val = val;
+                    int score;
+                    if (val <= deficit) {
+                        score = val; // No wasted healing, larger is better
+                    } else {
+                        score = deficit - (val - deficit); // Wasted healing penalizes score
+                    }
+                    if (score > best_score) {
+                        best_score = score;
                         best_idx = i + 1;
                     }
                 }
@@ -115,6 +442,19 @@ public:
                 }
             }
         } else if (current_action->name() == "Attack Monster") {
+            // Attack the HIGHEST value valid monster first to leave room for lower ones later
+            best_val = -1;
+            for (int i = 0; i < room->cards_in_room(); ++i) {
+                if (current_action->can_execute(ctx, &room->look_card(i))) {
+                    int val = static_cast<int>(room->look_card(i).get_face()) + 2;
+                    if (val > best_val) {
+                        best_val = val;
+                        best_idx = i + 1;
+                    }
+                }
+            }
+        } else if (current_action->name() == "Hand Combat" || current_action->name() == "Attack Monster No Weapon") {
+            // Fight the LOWEST value monster to minimize damage
             best_val = 100;
             for (int i = 0; i < room->cards_in_room(); ++i) {
                 if (current_action->can_execute(ctx, &room->look_card(i))) {
@@ -125,12 +465,13 @@ public:
                     }
                 }
             }
-        } else if (current_action->name() == "Hand Combat" || current_action->name() == "Attack Monster No Weapon") {
-            best_val = 100;
+        } else if (current_action->name() == "Banish Monster") {
+            // Banish the HIGHEST value monster to avoid the most damage
+            best_val = -1;
             for (int i = 0; i < room->cards_in_room(); ++i) {
                 if (current_action->can_execute(ctx, &room->look_card(i))) {
                     int val = static_cast<int>(room->look_card(i).get_face()) + 2;
-                    if (val < best_val) {
+                    if (val > best_val) {
                         best_val = val;
                         best_idx = i + 1;
                     }
@@ -163,6 +504,9 @@ public:
         defeat_reason = "";
         m_ctx = nullptr;
         m_last_action_idx = -1;
+        m_last_room = nullptr;
+        m_banished_this_room = false;
+        m_next_card_idx = -1;
     }
 };
 
@@ -185,9 +529,9 @@ struct Stats {
     double avg_score() const { return games == 0 ? 0 : (double)total_score / games; }
 };
 
-void run_simulations(PlayerClassType class_type, int iterations, const std::string& label) {
+void run_simulations(PlayerClassType class_type, int iterations, const std::string& label, bool use_lookahead) {
     Stats stats;
-    auto ui = std::make_unique<SimulationUI>();
+    auto ui = std::make_unique<SimulationUI>(use_lookahead);
     auto factory = std::make_unique<DefaultGameContextFactory>();
     std::random_device rd;
     
@@ -223,13 +567,21 @@ void run_simulations(PlayerClassType class_type, int iterations, const std::stri
 
 int main(int argc, char** argv) {
     int iterations = 1000;
+    bool use_lookahead = false;
     if (argc > 1) {
         try {
             iterations = std::stoi(argv[1]);
         } catch (...) {}
     }
+    if (argc > 2) {
+        std::string algo = argv[2];
+        if (algo == "lookahead" || algo == "dfs") {
+            use_lookahead = true;
+        }
+    }
 
     std::cout << "Running Scoundrel Balance Simulation (" << iterations << " games per class)..." << std::endl;
+    std::cout << "Algorithm Mode: " << (use_lookahead ? "Room-Level Lookahead (DFS)" : "Optimized Greedy") << std::endl;
     std::cout << std::string(65, '-') << std::endl;
     std::cout << std::left << std::setw(15) << "Class" 
               << std::right << std::setw(10) << "Games" 
@@ -238,9 +590,10 @@ int main(int argc, char** argv) {
               << std::setw(10) << "Max Score" << std::endl;
     std::cout << std::string(65, '-') << std::endl;
 
-    run_simulations(PlayerClassType::PEASANT, iterations, "Peasant");
-    run_simulations(PlayerClassType::WARRIOR, iterations, "Warrior");
-    run_simulations(PlayerClassType::HEALER, iterations, "Healer");
+    run_simulations(PlayerClassType::PEASANT, iterations, "Peasant", use_lookahead);
+    run_simulations(PlayerClassType::WARRIOR, iterations, "Warrior", use_lookahead);
+    run_simulations(PlayerClassType::HEALER, iterations, "Healer", use_lookahead);
+    run_simulations(PlayerClassType::WIZARD, iterations, "Wizard", use_lookahead);
 
     std::cout << std::string(65, '-') << std::endl;
 

@@ -11,7 +11,7 @@ This project is a C++ automated balance simulator for the **Scoundrel** card gam
 - **Architecture**:
     - The simulator implements the `UserInterface` from `scoundrel-core` to provide a non-interactive, heuristic-driven "AI" player.
     - `SimulationUI` handles automated decision-making for actions and card selection.
-    - Statistics are collected for several player classes: `Peasant`, `Warrior`, and `Healer`.
+    - Statistics are collected for several player classes: `Peasant`, `Warrior`, `Healer`, and `Wizard`.
 
 ## Building and Running
 
@@ -32,12 +32,17 @@ cmake --build build --config Release
 
 ### Running the Simulator
 The executable will be generated in `build/Release/` (on Windows/MSVC) or `build/` (on Linux).
+The simulator supports custom iterations and two different play algorithms:
+
 ```powershell
-# Run with default iterations (1000 per class)
+# Run with default iterations (1000 per class) and greedy mode
 ./build/Release/ScoundrelSimulator.exe
 
-# Run with custom iterations
+# Run with custom iterations (e.g., 5000) and default greedy mode
 ./build/Release/ScoundrelSimulator.exe 5000
+
+# Run with custom iterations and Room-Level Lookahead Search (DFS)
+./build/Release/ScoundrelSimulator.exe 5000 lookahead
 ```
 
 ## Project Structure

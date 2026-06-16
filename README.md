@@ -10,11 +10,14 @@ The simulator leverages the core game engine from the sibling project `scoundrel
 
 ## Features
 
-- **Automated Play**: Implements a `SimulationUI` with heuristics to make automated decisions.
+- **Automated Play**: Implements a `SimulationUI` with support for two execution algorithms:
+  - **Optimized Greedy Heuristics**: Quick rules-based decisions (default).
+  - **Room-Level Lookahead Search (DFS)**: Performs an exhaustive search of all possible card resolution permutations in a room to make the mathematically optimal sequence of decisions.
 - **Class Analysis**: Supports testing for multiple player classes:
   - **Peasant**: Baseline performance.
-  - **Warrior**: Focuses on combat and weapons.
-  - **Healer**: High survivability through potions.
+  - **Warrior**: Focuses on combat and weapon kill chaining.
+  - **Healer**: High survivability through optimized potion drinking.
+  - **Wizard**: Banishes strong monsters and drinks multiple potions.
 - **Statistical Output**: Detailed breakdown of win rates, scores, and failure modes.
 - **Fast Execution**: Designed to run 10,000+ simulations in seconds (especially in Release mode).
 
@@ -38,14 +41,17 @@ cmake --build build --config Release
 
 ## Running
 
-The executable is named `ScoundrelSimulator`. By default, it runs 1,000 simulations per class.
+The executable is named `ScoundrelSimulator`. By default, it runs 1,000 simulations per class using the greedy algorithm.
 
 ```bash
-# Run with defaults
+# Run with defaults (1000 iterations, optimized greedy mode)
 ./build/ScoundrelSimulator
 
 # Run with custom iteration count (e.g., 5000)
 ./build/ScoundrelSimulator 5000
+
+# Run with Room-Level Lookahead Search (DFS)
+./build/ScoundrelSimulator 5000 lookahead
 ```
 
 > **Note**: On Windows with MSVC, the executable will likely be in `./build/Release/ScoundrelSimulator.exe`.
