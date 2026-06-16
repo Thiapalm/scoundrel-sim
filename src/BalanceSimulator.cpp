@@ -34,7 +34,8 @@ struct SimState {
     int actions_taken;
     bool room_skipped;
     std::string player_class_name;
-    std::vector<SimCard> room_cards;
+    SimCard room_cards[4];
+    int num_cards;
 };
 
 struct SimMove {
@@ -56,13 +57,14 @@ inline void solve_dfs(const SimState& state,
     }
 
     // Check if we can do New Room
-    if (state.actions_taken == 3 || state.room_cards.empty()) {
+    if (state.actions_taken == 3 || state.num_cards == 0) {
         int score = state.hp * 100;
         if (state.has_weapon) {
             score += state.weapon_damage * 15;
         }
         if (state.actions_taken == 3) {
-            for (const auto& card : state.room_cards) {
+            for (int i = 0; i < state.num_cards; ++i) {
+                const auto& card = state.room_cards[i];
                 if (card.type == CardType::Monster) {
                     score -= card.value * 12;
                 } else if (card.type == CardType::Potion) {
@@ -96,22 +98,25 @@ inline void solve_dfs(const SimState& state,
         path.pop_back();
     }
 
-    if (state.room_cards.empty()) {
+    if (state.num_cards == 0) {
         return;
     }
 
-    for (size_t i = 0; i < state.room_cards.size(); ++i) {
+    for (int i = 0; i < state.num_cards; ++i) {
         const auto& card = state.room_cards[i];
         
-        auto get_next_cards = [&](size_t remove_idx) {
-            std::vector<SimCard> next_cards = state.room_cards;
-            next_cards.erase(next_cards.begin() + remove_idx);
-            return next_cards;
+        auto apply_next_cards = [&](SimState& next_state, int remove_idx) {
+            next_state.num_cards = 0;
+            for (int j = 0; j < state.num_cards; ++j) {
+                if (j != remove_idx) {
+                    next_state.room_cards[next_state.num_cards++] = state.room_cards[j];
+                }
+            }
         };
 
         if (card.type == CardType::Potion) {
             SimState next_state = state;
-            next_state.room_cards = get_next_cards(i);
+            apply_next_cards(next_state, i);
             next_state.actions_taken++;
             
             bool can_heal = !state.potion_used || (state.player_class_name == "Wizard");
@@ -126,7 +131,7 @@ inline void solve_dfs(const SimState& state,
         }
         else if (card.type == CardType::Weapon) {
             SimState next_state = state;
-            next_state.room_cards = get_next_cards(i);
+            apply_next_cards(next_state, i);
             next_state.actions_taken++;
             
             next_state.has_weapon = true;
@@ -141,7 +146,7 @@ inline void solve_dfs(const SimState& state,
         else if (card.type == CardType::Monster) {
             if (state.player_class_name == "Wizard" && !state.banished_this_room) {
                 SimState next_state = state;
-                next_state.room_cards = get_next_cards(i);
+                apply_next_cards(next_state, i);
                 next_state.actions_taken++;
                 next_state.banished_this_room = true;
                 
@@ -155,7 +160,7 @@ inline void solve_dfs(const SimState& state,
                                   (card.value < state.weapon_last_monster_damage);
                 if (can_attack) {
                     SimState next_state = state;
-                    next_state.room_cards = get_next_cards(i);
+                    apply_next_cards(next_state, i);
                     next_state.actions_taken++;
                     
                     int damage_taken = std::max(0, card.value - state.weapon_damage);
@@ -172,7 +177,7 @@ inline void solve_dfs(const SimState& state,
             // Hand Combat / Attack Monster No Weapon
             {
                 SimState next_state = state;
-                next_state.room_cards = get_next_cards(i);
+                apply_next_cards(next_state, i);
                 next_state.actions_taken++;
                 next_state.hp = state.hp - card.value;
                 
@@ -211,6 +216,13 @@ public:
     
     std::optional<int> request_action_index(int max_index) override {
         if (!m_ctx) return 0;
+        
+        auto* room = m_ctx->get_room();
+        if (room && room != m_last_room) {
+            m_last_room = room;
+            m_banished_this_room = false;
+        }
+
         auto actions = m_ctx->get_turn_valid_actions();
         
         if (m_use_lookahead) {
@@ -229,13 +241,14 @@ public:
             
             auto* room = m_ctx->get_room();
             if (room) {
+                state.num_cards = 0;
                 for (int i = 0; i < room->cards_in_room(); ++i) {
                     const auto& card = room->look_card(i);
                     SimCard sc;
                     sc.original_index = i;
                     sc.type = card.getType();
                     sc.value = static_cast<int>(card.get_face()) + 2;
-                    state.room_cards.push_back(sc);
+                    state.room_cards[state.num_cards++] = sc;
                 }
             }
             
@@ -352,7 +365,10 @@ public:
                     }
                 }
             }
-            if (should_banish) return idx;
+            if (should_banish) {
+                m_banished_this_room = true;
+                return idx;
+            }
         }
 
         // 4. Drink potion if we are damaged and can/should heal
@@ -385,7 +401,10 @@ public:
 
         // Fallbacks:
         if ((idx = find_action("Skip Room")) != -1) return idx;
-        if (!m_banished_this_room && (idx = find_action("Banish Monster")) != -1) return idx;
+        if (!m_banished_this_room && (idx = find_action("Banish Monster")) != -1) {
+            m_banished_this_room = true;
+            return idx;
+        }
         if ((idx = find_action("Attack Monster No Weapon")) != -1) return idx;
         if ((idx = find_action("Hand Combat")) != -1) return idx;
         if ((idx = find_action("Attack Monster")) != -1) return idx;
