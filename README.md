@@ -52,6 +52,9 @@ The executable is named `ScoundrelSimulator`. By default, it runs 1,000 simulati
 
 # Run with Room-Level Lookahead Search (DFS)
 ./build/ScoundrelSimulator 5000 lookahead
+
+# Run with Lookahead Search in Extended Mode (Warlord + Plague Doctor)
+./build/ScoundrelSimulator 5000 lookahead extended
 ```
 
 > **Note**: On Windows with MSVC, the executable will likely be in `./build/Release/ScoundrelSimulator.exe`.
