@@ -880,6 +880,7 @@ int main(int argc, char **argv)
         }
         catch (...)
         {
+            std::cerr << "Warning: Invalid card_mask format. Using default value (0)." << std::endl;
             card_mask = 0;
         }
     }
@@ -907,7 +908,9 @@ int main(int argc, char **argv)
     std::cout << "Mode      : " << mode << std::endl;
     if (card_mask != 0)
     {
-        std::cout << "Card Mask : 0x" << std::hex << card_mask << std::dec << std::endl;
+        auto flags = std::cout.flags();
+        std::cout << "Card Mask : 0x" << std::hex << card_mask << std::endl;
+        std::cout.flags(flags);
     }
 
     if (run_default)
