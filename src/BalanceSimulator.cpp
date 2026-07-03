@@ -792,8 +792,13 @@ struct Stats
 };
 
 void run_simulations(PlayerClassType class_type, int iterations, const std::string &label,
-                     bool use_lookahead, GameType game_type = GameType::DEFAULT)
+                     bool use_lookahead, GameType game_type = GameType::DEFAULT, uint64_t card_mask = 0)
 {
+    if (card_mask == 0)
+    {
+        card_mask = (game_type == GameType::DEFAULT) ? 0x7fdfff7ffc1ffULL : 0x7ffffffffc1ffULL;
+    }
+
     Stats stats;
     auto ui = std::make_unique<SimulationUI>(use_lookahead);
     auto factory = std::make_unique<DefaultGameContextFactory>();
@@ -802,9 +807,9 @@ void run_simulations(PlayerClassType class_type, int iterations, const std::stri
     for (int i = 0; i < iterations; ++i)
     {
         ui->reset();
-        auto game = GameLogic::create(game_type);
+        auto game = GameLogic::create(game_type, card_mask);
         factory->set_player(create_player(class_type));
-        auto ctx = factory->create_game_context(rd(), game_type);
+        auto ctx = factory->create_game_context(rd(), game_type, card_mask);
         ui->m_ctx = ctx.get();
         game->set_context(std::move(ctx));
         game->set_interface(ui.get());
@@ -863,6 +868,33 @@ int main(int argc, char **argv)
         mode = argv[3];
     }
 
+    uint64_t card_mask = 0;
+    if (argc > 4)
+    {
+        try
+        {
+            std::string mask_str = argv[4];
+            if (mask_str.rfind("0x", 0) == 0)
+            {
+                card_mask = std::stoull(mask_str, nullptr, 16);
+            }
+            else
+            {
+                card_mask = std::stoull(mask_str);
+            }
+        }
+        catch (const std::invalid_argument &)
+        {
+            std::cerr << "Warning: Invalid card_mask format. Using default value (0)." << std::endl;
+            card_mask = 0;
+        }
+        catch (const std::out_of_range &)
+        {
+            std::cerr << "Warning: card_mask is out of range. Using default value (0)." << std::endl;
+            card_mask = 0;
+        }
+    }
+
     bool run_default = (mode == "default" || mode == "both");
     bool run_extended = (mode == "extended" || mode == "both");
 
@@ -884,24 +916,30 @@ int main(int argc, char **argv)
     std::cout << "Running Scoundrel Balance Simulation (" << iterations << " games per class)" << std::endl;
     std::cout << "Algorithm : " << algo_label << std::endl;
     std::cout << "Mode      : " << mode << std::endl;
+    if (card_mask != 0)
+    {
+        std::ostringstream ss;
+        ss << "0x" << std::hex << card_mask;
+        std::cout << "Card Mask : " << ss.str() << std::endl;
+    }
 
     if (run_default)
     {
         print_header("[ Default Mode ]");
-        run_simulations(PlayerClassType::PEASANT, iterations, "Peasant", use_lookahead, GameType::DEFAULT);
-        run_simulations(PlayerClassType::WARRIOR, iterations, "Warrior", use_lookahead, GameType::DEFAULT);
-        run_simulations(PlayerClassType::HEALER, iterations, "Healer", use_lookahead, GameType::DEFAULT);
-        run_simulations(PlayerClassType::WIZARD, iterations, "Wizard", use_lookahead, GameType::DEFAULT);
+        run_simulations(PlayerClassType::PEASANT, iterations, "Peasant", use_lookahead, GameType::DEFAULT, card_mask);
+        run_simulations(PlayerClassType::WARRIOR, iterations, "Warrior", use_lookahead, GameType::DEFAULT, card_mask);
+        run_simulations(PlayerClassType::HEALER, iterations, "Healer", use_lookahead, GameType::DEFAULT, card_mask);
+        run_simulations(PlayerClassType::WIZARD, iterations, "Wizard", use_lookahead, GameType::DEFAULT, card_mask);
         std::cout << std::string(65, '-') << std::endl;
     }
 
     if (run_extended)
     {
         print_header("[ Extended Mode ] (Warlord + Plague Doctor active)");
-        run_simulations(PlayerClassType::PEASANT, iterations, "Peasant", use_lookahead, GameType::EXTENDED);
-        run_simulations(PlayerClassType::WARRIOR, iterations, "Warrior", use_lookahead, GameType::EXTENDED);
-        run_simulations(PlayerClassType::HEALER, iterations, "Healer", use_lookahead, GameType::EXTENDED);
-        run_simulations(PlayerClassType::WIZARD, iterations, "Wizard", use_lookahead, GameType::EXTENDED);
+        run_simulations(PlayerClassType::PEASANT, iterations, "Peasant", use_lookahead, GameType::EXTENDED, card_mask);
+        run_simulations(PlayerClassType::WARRIOR, iterations, "Warrior", use_lookahead, GameType::EXTENDED, card_mask);
+        run_simulations(PlayerClassType::HEALER, iterations, "Healer", use_lookahead, GameType::EXTENDED, card_mask);
+        run_simulations(PlayerClassType::WIZARD, iterations, "Wizard", use_lookahead, GameType::EXTENDED, card_mask);
         std::cout << std::string(65, '-') << std::endl;
     }
 

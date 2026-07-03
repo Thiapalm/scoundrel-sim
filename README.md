@@ -43,8 +43,20 @@ cmake --build build --config Release
 
 The executable is named `ScoundrelSimulator`. By default, it runs 1,000 simulations per class using the greedy algorithm.
 
+The simulator supports up to four CLI arguments:
 ```bash
-# Run with defaults (1000 iterations, optimized greedy mode)
+./build/ScoundrelSimulator [iterations] [algorithm] [mode] [card_mask]
+```
+
+- **iterations**: Number of simulated games to run per player class (default: `1000`).
+- **algorithm**: Play logic style. Options are `greedy` (default) or `lookahead` / `dfs`.
+- **mode**: Game ruleset mode. Options are `default` (Standard, default), `extended`, or `both`.
+- **card_mask**: Custom card selection bitmask as a decimal or `0x`-prefixed hex value. If omitted, the default card sets for standard or extended modes are used.
+
+### CLI Examples
+
+```bash
+# Run with defaults (1000 iterations, optimized greedy mode, standard cards)
 ./build/ScoundrelSimulator
 
 # Run with custom iteration count (e.g., 5000)
@@ -55,6 +67,9 @@ The executable is named `ScoundrelSimulator`. By default, it runs 1,000 simulati
 
 # Run with Lookahead Search in Extended Mode (Warlord + Plague Doctor)
 ./build/ScoundrelSimulator 5000 lookahead extended
+
+# Run with a custom card selection bitmask (e.g. standard mask in hex)
+./build/ScoundrelSimulator 5000 lookahead extended 0x7fdfff7ffc1ff
 ```
 
 > **Note**: On Windows with MSVC, the executable will likely be in `./build/Release/ScoundrelSimulator.exe`.
