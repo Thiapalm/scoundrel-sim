@@ -878,9 +878,19 @@ int main(int argc, char **argv)
                 card_mask = std::stoull(mask_str);
             }
         }
-        catch (...)
+        catch (const std::invalid_argument &)
         {
             std::cerr << "Warning: Invalid card_mask format. Using default value (0)." << std::endl;
+            card_mask = 0;
+        }
+        catch (const std::out_of_range &)
+        {
+            std::cerr << "Warning: card_mask is out of range. Using default value (0)." << std::endl;
+            card_mask = 0;
+        }
+        catch (...)
+        {
+            std::cerr << "Warning: Error parsing card_mask. Using default value (0)." << std::endl;
             card_mask = 0;
         }
     }
@@ -908,9 +918,9 @@ int main(int argc, char **argv)
     std::cout << "Mode      : " << mode << std::endl;
     if (card_mask != 0)
     {
-        auto flags = std::cout.flags();
-        std::cout << "Card Mask : 0x" << std::hex << card_mask << std::endl;
-        std::cout.flags(flags);
+        std::ostringstream ss;
+        ss << "0x" << std::hex << card_mask;
+        std::cout << "Card Mask : " << ss.str() << std::endl;
     }
 
     if (run_default)
