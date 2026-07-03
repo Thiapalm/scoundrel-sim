@@ -794,6 +794,11 @@ struct Stats
 void run_simulations(PlayerClassType class_type, int iterations, const std::string &label,
                      bool use_lookahead, GameType game_type = GameType::DEFAULT, uint64_t card_mask = 0)
 {
+    if (card_mask == 0)
+    {
+        card_mask = (game_type == GameType::DEFAULT) ? 0x7fdfff7ffc1ffULL : 0x7ffffffffc1ffULL;
+    }
+
     Stats stats;
     auto ui = std::make_unique<SimulationUI>(use_lookahead);
     auto factory = std::make_unique<DefaultGameContextFactory>();
