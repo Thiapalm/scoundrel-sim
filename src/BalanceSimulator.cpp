@@ -888,11 +888,6 @@ int main(int argc, char **argv)
             std::cerr << "Warning: card_mask is out of range. Using default value (0)." << std::endl;
             card_mask = 0;
         }
-        catch (...)
-        {
-            std::cerr << "Warning: Error parsing card_mask. Using default value (0)." << std::endl;
-            card_mask = 0;
-        }
     }
 
     bool run_default = (mode == "default" || mode == "both");
